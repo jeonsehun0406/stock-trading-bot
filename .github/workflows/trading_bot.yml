@@ -57,13 +57,13 @@ jobs:
 
       - name: Debug (길이만 확인, 값은 출력 안 함)
         run: |
-          python3 -c "
-import dotenv, os
-dotenv.load_dotenv('.env')
-for k in ['KIS_HTS_ID','KIS_ACCOUNT_NO','KIS_APP_KEY','KIS_APP_SECRET','KIS_V_APP_KEY','KIS_V_APP_SECRET','KIS_V_ACCOUNT_NO','KIS_VIRTUAL']:
-    v = os.getenv(k, '')
-    print(f'{k}: len={len(v)} repr_tail={v[-3:]!r}')
-"
+          python3 - <<'PYEOF'
+          import dotenv, os
+          dotenv.load_dotenv('.env')
+          for k in ['KIS_HTS_ID','KIS_ACCOUNT_NO','KIS_APP_KEY','KIS_APP_SECRET','KIS_V_APP_KEY','KIS_V_APP_SECRET','KIS_V_ACCOUNT_NO','KIS_VIRTUAL']:
+              v = os.getenv(k, '')
+              print(f'{k}: len={len(v)} tail={v[-3:]!r}')
+          PYEOF
 
       - name: Run bot (1회 스캔)
         run: python trading_bot.py
