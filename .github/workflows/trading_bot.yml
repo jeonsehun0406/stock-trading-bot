@@ -62,7 +62,7 @@ jobs:
           dotenv.load_dotenv('.env')
           for k in ['KIS_HTS_ID','KIS_ACCOUNT_NO','KIS_APP_KEY','KIS_APP_SECRET','KIS_V_APP_KEY','KIS_V_APP_SECRET','KIS_V_ACCOUNT_NO','KIS_VIRTUAL']:
               v = os.getenv(k, '')
-              print(f'{k}: len={len(v)} tail={v[-3:]!r}')
+              print(f'{k}: len={len(v)} head={v[:5]!r} tail={v[-5:]!r}')
           PYEOF
 
       - name: Run bot (1회 스캔)
