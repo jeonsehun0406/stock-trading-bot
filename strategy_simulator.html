@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>전략 시뮬레이터</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#151b23; --panel-2:#1a2129; --line:#232c37;
+    --ink:#e6edf3; --ink-dim:#8b98a5; --ink-faint:#5a6673;
+    --up:#2dd4a7; --down:#f6785e; --accent:#5b9dff; --gold:#e3b341;
+    --buy:#2dd4a7; --sell:#f6785e;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    font-feature-settings:"tnum";line-height:1.4;padding:16px;
+    max-width:960px;margin:0 auto;-webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:"SF Mono",ui-monospace,Consolas,monospace}
+  header{margin-bottom:16px}
+  header h1{font-size:16px;font-weight:600;display:flex;align-items:center;gap:9px}
+  header .sub{font-size:12px;color:var(--ink-faint);margin-top:4px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--accent)}
+
+  /* 전략 선택 탭 */
+  .tabs{display:flex;gap:7px;overflow-x:auto;margin-bottom:14px;padding-bottom:3px;-webkit-overflow-scrolling:touch}
+  .tab{flex-shrink:0;padding:8px 14px;border:1px solid var(--line);border-radius:9px;
+    background:var(--panel);color:var(--ink-dim);font-size:13px;font-weight:600;
+    cursor:pointer;transition:all .15s;white-space:nowrap}
+  .tab:hover{border-color:var(--ink-faint)}
+  .tab.active{background:var(--accent);color:#04121f;border-color:var(--accent)}
+
+  /* 전략 설명 */
+  .strat-info{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:13px 15px;margin-bottom:14px}
+  .strat-info .nm{font-size:14px;font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+  .badge{font-size:10px;padding:2px 7px;border-radius:5px;font-weight:700}
+  .badge.safe{color:var(--up);background:rgba(45,212,167,.1)}
+  .badge.trend{color:var(--accent);background:rgba(91,157,255,.1)}
+  .badge.mean{color:var(--gold);background:rgba(227,179,65,.1)}
+  .badge.aggr{color:var(--down);background:rgba(246,120,94,.1)}
+  .strat-info .ds{font-size:12.5px;color:var(--ink-dim);line-height:1.5}
+
+  /* 차트 */
+  .chart-card{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:14px;margin-bottom:14px}
+  .chart-card svg{width:100%;height:230px;display:block}
+  .legend{display:flex;gap:16px;margin-top:10px;font-size:11px;color:var(--ink-dim);flex-wrap:wrap}
+  .legend span{display:flex;align-items:center;gap:5px}
+  .lg-dot{width:9px;height:9px;border-radius:50%}
+
+  /* 성과 요약 */
+  .perf{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:14px}
+  .pf{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 8px;text-align:center}
+  .pf .k{font-size:10px;color:var(--ink-dim);margin-bottom:4px}
+  .pf .v{font-size:16px;font-weight:700}
+  .pf .v.mono{font-size:15px}
+
+  /* 매매 마커 리스트 */
+  .signals{background:var(--panel);border:1px solid var(--line);border-radius:11px;overflow:hidden}
+  .sig-head{font-size:12px;color:var(--ink-dim);padding:11px 14px;border-bottom:1px solid var(--line);font-weight:600}
+  .sig{display:grid;grid-template-columns:auto auto 1fr auto;gap:10px;align-items:center;
+    padding:9px 14px;border-bottom:1px solid var(--line);font-size:12.5px}
+  .sig:last-child{border-bottom:none}
+  .sig .tg{font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px}
+  .sig .tg.b{color:var(--buy);background:rgba(45,212,167,.1)}
+  .sig .tg.s{color:var(--sell);background:rgba(246,120,94,.1)}
+  .sig .day{color:var(--ink-faint);font-size:11px}
+  .sig .px{text-align:right;font-weight:600}
+  .sig .rt{text-align:right;font-weight:700;min-width:52px}
+
+  .up{color:var(--up)} .down{color:var(--down)}
+  .note{margin-top:16px;padding:12px 15px;background:var(--panel-2);border:1px solid var(--line);
+    border-left:3px solid var(--accent);border-radius:8px;font-size:12px;color:var(--ink-dim);line-height:1.6}
+  .note b{color:var(--ink)}
+
+  @media(max-width:520px){
+    .perf{grid-template-columns:repeat(2,1fr)}
+    .chart-card svg{height:190px}
+  }
+</style>
+</head>
+<body>
+
+  <header>
+    <h1><span class="dot"></span>전략 시뮬레이터</h1>
+    <div class="sub">각 전략이 언제 사고 파는지 차트에서 직접 확인하세요 · 샘플 데이터</div>
+  </header>
+
+  <div class="tabs" id="tabs"></div>
+  <div class="strat-info" id="stratInfo"></div>
+
+  <div class="chart-card">
+    <svg id="chart" viewBox="0 0 640 230" preserveAspectRatio="none"></svg>
+    <div class="legend">
+      <span><span class="lg-dot" style="background:var(--ink-dim)"></span>주가</span>
+      <span><span class="lg-dot" style="background:var(--buy)"></span>매수 지점</span>
+      <span><span class="lg-dot" style="background:var(--sell)"></span>매도 지점</span>
+    </div>
+  </div>
+
+  <div class="perf" id="perf"></div>
+
+  <div class="signals">
+    <div class="sig-head">매매 신호 내역</div>
+    <div id="sigList"></div>
+  </div>
+
+  <div class="note">
+    <b>이건 샘플 주가로 각 전략을 실제로 돌린 결과예요.</b> 전략마다 사고파는 지점이
+    완전히 다른 게 보이죠. 실제 백테스트(<b>compare_strategies.py</b>)를 후니님 PC에서
+    돌리면 진짜 종목·기간으로 이 비교를 볼 수 있어요. 여기서 감을 잡고, 백테스트로 검증하세요.
+  </div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   샘플 주가 생성 (여러 국면 포함: 상승→조정→횡보→반등)
+   실제 지표 계산은 strategies.py와 동일한 로직을 JS로 옮긴 것
+   ═══════════════════════════════════════════════════════════════ */
+function genPrices(){
+  // 재현 가능한 의사난수
+  let seed = 42;
+  const rand = () => { seed = (seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; };
+  const n = 120;
+  const prices = [];
+  let p = 100;
+  for(let i=0;i<n;i++){
+    let drift;
+    if(i<30) drift = 0.4;        // 상승
+    else if(i<50) drift = -0.6;  // 조정
+    else if(i<80) drift = 0.05;  // 횡보
+    else drift = 0.5;            // 반등
+    p += drift + (rand()-0.5)*2.2;
+    p = Math.max(p, 40);
+    prices.push(p);
+  }
+  return prices;
+}
+const PRICES = genPrices();
+
+// ── 지표 계산 (strategies.py와 동일 로직) ──
+function sma(arr, period, idx){
+  if(idx < period-1) return null;
+  let s=0; for(let i=idx-period+1;i<=idx;i++) s+=arr[i];
+  return s/period;
+}
+function rsi(arr, idx, period=14){
+  if(idx < period) return null;
+  let gain=0, loss=0;
+  for(let i=idx-period+1;i<=idx;i++){
+    const d = arr[i]-arr[i-1];
+    if(d>0) gain+=d; else loss-=d;
+  }
+  if(loss===0) return 100;
+  const rs = (gain/period)/(loss/period);
+  return 100 - 100/(1+rs);
+}
+function stddev(arr, period, idx){
+  if(idx < period-1) return null;
+  const m = sma(arr, period, idx);
+  let s=0; for(let i=idx-period+1;i<=idx;i++) s+=(arr[i]-m)**2;
+  return Math.sqrt(s/period);
+}
+function ema(arr, period, idx, cache){
+  const k = 2/(period+1);
+  if(idx===0){ cache[idx]=arr[0]; return arr[0]; }
+  cache[idx] = arr[idx]*k + cache[idx-1]*(1-k);
+  return cache[idx];
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   전략 정의 — check(i) → 'BUY' | 'SELL' | null
+   각 전략은 매수 신호만 정의, 매도는 공통(익절 +8% / 손절 -5%)
+   ═══════════════════════════════════════════════════════════════ */
+const STRATEGIES = {
+  rsi: {
+    name:"RSI 저가매수", badge:"safe", badgeText:"위험회피",
+    desc:"RSI가 30~40으로 떨어진 과매도 구간에서 매수. 눌림목·횡보장에 강하고, 고점 추격을 피하는 보수적 전략.",
+    buy:(i)=>{ const r=rsi(PRICES,i); return r!==null && r>=30 && r<=40; },
+  },
+  ma_cross: {
+    name:"이동평균 골든크로스", badge:"trend", badgeText:"추세추종",
+    desc:"단기(10일)선이 장기(30일)선을 아래에서 위로 뚫는 순간 매수. 상승 추세의 시작을 포착.",
+    buy:(i)=>{ const f=sma(PRICES,10,i),s=sma(PRICES,30,i),pf=sma(PRICES,10,i-1),ps=sma(PRICES,30,i-1);
+      return f&&s&&pf&&ps && f>s && pf<=ps; },
+  },
+  bollinger: {
+    name:"볼린저밴드 하단반등", badge:"mean", badgeText:"평균회귀",
+    desc:"가격이 볼린저 하단선을 이탈했다가 다시 위로 복귀할 때 매수. 변동성 있는 횡보장에서 반등을 노림.",
+    buy:(i)=>{ const m=sma(PRICES,20,i),sd=stddev(PRICES,20,i),
+      pm=sma(PRICES,20,i-1),psd=stddev(PRICES,20,i-1);
+      if(!m||!sd||!pm||!psd) return false;
+      const low=m-2*sd, plow=pm-2*psd;
+      return PRICES[i-1]<plow && PRICES[i]>=low; },
+  },
+  breakout: {
+    name:"돌파매매", badge:"aggr", badgeText:"공격적",
+    desc:"최근 20일 최고가를 위로 돌파할 때 매수. 강한 상승의 초입을 잡는 공격적 전략.",
+    buy:(i)=>{ if(i<21) return false;
+      let hi=0; for(let j=i-20;j<i;j++) hi=Math.max(hi,PRICES[j]);
+      return PRICES[i]>hi; },
+  },
+  macd: {
+    name:"MACD 골든크로스", badge:"trend", badgeText:"중립",
+    desc:"MACD선이 시그널선을 상향 돌파하는 추세 전환 신호에서 매수. 바닥권에서 나오면 신뢰도가 높음.",
+    buy:(i)=>{ // 간이 MACD
+      if(i<35) return false;
+      const c12={},c26={},cs={};
+      const macdArr=[];
+      for(let j=0;j<=i;j++){ macdArr.push(ema(PRICES,12,j,c12)-ema(PRICES,26,j,c26)); }
+      const sig=[]; for(let j=0;j<=i;j++){ sig.push(ema(macdArr,9,j,cs)); }
+      return macdArr[i]>sig[i] && macdArr[i-1]<=sig[i-1]; },
+  },
+};
+
+const TAKE_PROFIT = 0.08, STOP_LOSS = -0.05;
+
+// ── 전략 실행: 매수/매도 지점 계산 ──
+function runStrategy(key){
+  const strat = STRATEGIES[key];
+  const signals = [];
+  let holding = false, entryPrice = 0, entryIdx = 0;
+  let cash = 1000000, shares = 0;
+  const trades = [];
+
+  for(let i=0;i<PRICES.length;i++){
+    if(!holding){
+      if(strat.buy(i)){
+        holding = true; entryPrice = PRICES[i]; entryIdx = i;
+        shares = cash/PRICES[i]; cash = 0;
+        signals.push({type:"BUY", idx:i, price:PRICES[i]});
+      }
+    } else {
+      const ret = (PRICES[i]-entryPrice)/entryPrice;
+      if(ret>=TAKE_PROFIT || ret<=STOP_LOSS || i===PRICES.length-1){
+        holding = false; cash = shares*PRICES[i]; shares = 0;
+        const reason = ret>=TAKE_PROFIT?"익절":(ret<=STOP_LOSS?"손절":"청산");
+        signals.push({type:"SELL", idx:i, price:PRICES[i], ret:ret*100, reason});
+        trades.push(ret);
+      }
+    }
+  }
+  const finalValue = cash + shares*PRICES[PRICES.length-1];
+  const totalRet = (finalValue/1000000-1)*100;
+  const wins = trades.filter(t=>t>0).length;
+  const winRate = trades.length? wins/trades.length*100 : 0;
+  // MDD 계산
+  let peak=1000000, mdd=0, val=1000000, h=false, ep=0, sh=0, cs2=1000000;
+  // 간단화: 신호 기반 equity 추정 생략, 거래 수익률로 근사
+  return {signals, totalRet, winRate, tradeCount:trades.length, trades};
+}
+
+// ── 차트 그리기 ──
+function drawChart(signals){
+  const svg = document.getElementById('chart');
+  const W=640,H=230,padX=8,padY=14;
+  const min=Math.min(...PRICES), max=Math.max(...PRICES);
+  const range=(max-min)||1;
+  const x=i=>padX+(i/(PRICES.length-1))*(W-padX*2);
+  const y=v=>padY+(1-(v-min)/range)*(H-padY*2);
+  const linePts = PRICES.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+
+  let markers='';
+  signals.forEach(s=>{
+    const cx=x(s.idx), cy=y(s.price);
+    const col = s.type==='BUY'?'var(--buy)':'var(--sell)';
+    if(s.type==='BUY'){
+      // 위로 향한 삼각형
+      markers+=`<path d="M${cx},${cy-11} L${cx-5},${cy-4} L${cx+5},${cy-4} Z" fill="${col}"/>`;
+    } else {
+      markers+=`<path d="M${cx},${cy+11} L${cx-5},${cy+4} L${cx+5},${cy+4} Z" fill="${col}"/>`;
+    }
+    markers+=`<circle cx="${cx}" cy="${cy}" r="2.5" fill="${col}"/>`;
+  });
+
+  svg.innerHTML=`
+    <polyline points="${linePts}" fill="none" stroke="var(--ink-dim)" stroke-width="1.5"
+      stroke-linejoin="round"/>
+    ${markers}
+  `;
+}
+
+// ── 성과 표시 ──
+function showPerf(r){
+  const up = r.totalRet>=0;
+  document.getElementById('perf').innerHTML = `
+    <div class="pf"><div class="k">총 수익률</div>
+      <div class="v ${up?'up':'down'}">${up?'+':''}${r.totalRet.toFixed(1)}%</div></div>
+    <div class="pf"><div class="k">매매 횟수</div>
+      <div class="v">${r.tradeCount}회</div></div>
+    <div class="pf"><div class="k">승률</div>
+      <div class="v">${r.winRate.toFixed(0)}%</div></div>
+    <div class="pf"><div class="k">신호 수</div>
+      <div class="v">${r.signals.length}개</div></div>
+  `;
+}
+
+// ── 신호 리스트 ──
+function showSignals(signals){
+  if(signals.length===0){
+    document.getElementById('sigList').innerHTML =
+      `<div class="sig"><span style="color:var(--ink-faint)">이 샘플 구간에서는 매매 신호가 없었어요</span></div>`;
+    return;
+  }
+  document.getElementById('sigList').innerHTML = signals.map(s=>{
+    const isBuy = s.type==='BUY';
+    let right;
+    if(isBuy){
+      right = `<span class="px mono">${Math.round(s.price).toLocaleString()}</span><span class="rt"></span>`;
+    } else {
+      const up = s.ret>=0;
+      right = `<span class="px mono">${Math.round(s.price).toLocaleString()}</span>
+        <span class="rt ${up?'up':'down'}">${up?'+':''}${s.ret.toFixed(1)}%</span>`;
+    }
+    return `<div class="sig">
+      <span class="tg ${isBuy?'b':'s'}">${isBuy?'매수':'매도'}</span>
+      <span class="day">${s.idx}일차</span>
+      <span>${isBuy?'진입':s.reason}</span>
+      ${right}
+    </div>`;
+  }).join('');
+}
+
+// ── 전략 정보 ──
+function showInfo(key){
+  const s = STRATEGIES[key];
+  document.getElementById('stratInfo').innerHTML = `
+    <div class="nm">${s.name}<span class="badge ${s.badge}">${s.badgeText}</span></div>
+    <div class="ds">${s.desc}</div>`;
+}
+
+// ── 전환 ──
+function selectStrategy(key){
+  document.querySelectorAll('.tab').forEach(t=>
+    t.classList.toggle('active', t.dataset.key===key));
+  showInfo(key);
+  const r = runStrategy(key);
+  drawChart(r.signals);
+  showPerf(r);
+  showSignals(r.signals);
+}
+
+// ── 초기화 ──
+const labels = {rsi:"RSI", ma_cross:"이동평균", bollinger:"볼린저", breakout:"돌파", macd:"MACD"};
+document.getElementById('tabs').innerHTML = Object.keys(STRATEGIES).map(k=>
+  `<button class="tab" data-key="${k}" onclick="selectStrategy('${k}')">${labels[k]}</button>`).join('');
+selectStrategy('rsi');
+</script>
+</body>
+</html>

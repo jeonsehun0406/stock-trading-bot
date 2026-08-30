@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>자동매매 대시보드</title>
+<style>
+  /* ═══════════════════════════════════════════════════════════
+     디자인 방향: "새벽 3시의 트레이딩 데스크"
+     - 배경은 깊은 잉크블루(차분하게 오래 봐도 안 피로)
+     - 수익=청록, 손실=산호빛 (빨강 대신 눈에 덜 공격적인 톤)
+     - 숫자가 주인공. 등폭 폰트로 정렬감.
+     ═══════════════════════════════════════════════════════════ */
+  :root{
+    --bg:#0d1117;
+    --panel:#151b23;
+    --panel-2:#1a2129;
+    --line:#232c37;
+    --ink:#e6edf3;
+    --ink-dim:#8b98a5;
+    --ink-faint:#5a6673;
+    --up:#2dd4a7;        /* 수익 */
+    --up-bg:rgba(45,212,167,.08);
+    --down:#f6785e;      /* 손실 */
+    --down-bg:rgba(246,120,94,.08);
+    --accent:#5b9dff;    /* 강조(중립 정보) */
+    --gold:#e3b341;      /* 경고/주의 */
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    font-feature-settings:"tnum";
+    line-height:1.4;
+    padding:16px;
+    max-width:960px;
+    margin:0 auto;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:"SF Mono",ui-monospace,"Cascadia Code",Consolas,monospace}
+
+  /* ── 헤더 ── */
+  header{
+    display:flex;align-items:center;justify-content:space-between;
+    margin-bottom:18px;flex-wrap:wrap;gap:8px;
+  }
+  .brand{display:flex;align-items:center;gap:10px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--up);
+    box-shadow:0 0 0 0 var(--up);animation:pulse 2.4s infinite}
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(45,212,167,.5)}
+    70%{box-shadow:0 0 0 7px rgba(45,212,167,0)}
+    100%{box-shadow:0 0 0 0 rgba(45,212,167,0)}
+  }
+  .brand h1{font-size:15px;font-weight:600;letter-spacing:.2px}
+  .brand .mode{font-size:11px;color:var(--gold);border:1px solid var(--line);
+    padding:2px 7px;border-radius:5px;margin-left:2px}
+  .updated{font-size:11px;color:var(--ink-faint)}
+
+  /* ── 히어로: 총자산 ── */
+  .hero{
+    background:linear-gradient(160deg,var(--panel),var(--panel-2));
+    border:1px solid var(--line);border-radius:14px;
+    padding:22px 20px;margin-bottom:14px;position:relative;overflow:hidden;
+  }
+  .hero .label{font-size:12px;color:var(--ink-dim);margin-bottom:6px;letter-spacing:.3px}
+  .hero .total{font-size:38px;font-weight:700;letter-spacing:-.5px;line-height:1}
+  .hero .total .won{font-size:20px;color:var(--ink-dim);font-weight:500;margin-left:2px}
+  .hero .delta{margin-top:10px;display:flex;align-items:center;gap:10px;font-size:14px}
+  .pill{padding:3px 9px;border-radius:6px;font-weight:600;font-size:13px}
+  .pill.up{color:var(--up);background:var(--up-bg)}
+  .pill.down{color:var(--down);background:var(--down-bg)}
+  .hero .sub{color:var(--ink-faint);font-size:12px}
+
+  /* ── 요약 카드 3개 ── */
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px}
+  .stat .k{font-size:11px;color:var(--ink-dim);margin-bottom:5px}
+  .stat .v{font-size:19px;font-weight:600}
+  .stat .v.sm{font-size:15px}
+
+  /* ── 섹션 공통 ── */
+  .section{margin-bottom:14px}
+  .section-head{display:flex;align-items:center;justify-content:space-between;
+    margin-bottom:9px;padding:0 2px}
+  .section-head h2{font-size:13px;font-weight:600;color:var(--ink-dim);letter-spacing:.3px}
+  .section-head .meta{font-size:11px;color:var(--ink-faint)}
+
+  /* ── 보유 종목 ── */
+  .holdings{background:var(--panel);border:1px solid var(--line);border-radius:11px;overflow:hidden}
+  .holding{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;
+    padding:12px 14px;border-bottom:1px solid var(--line)}
+  .holding:last-child{border-bottom:none}
+  .h-name{font-size:14px;font-weight:600}
+  .h-sub{font-size:11px;color:var(--ink-faint);margin-top:2px}
+  .h-val{text-align:right;font-size:13px}
+  .h-val .amt{font-weight:600}
+  .h-ret{text-align:right;font-weight:700;font-size:14px;min-width:64px}
+  .bar{height:3px;background:var(--line);border-radius:2px;margin-top:6px;overflow:hidden;grid-column:1/-1}
+  .bar>span{display:block;height:100%;border-radius:2px}
+
+  /* ── 수익곡선 (인라인 SVG) ── */
+  .chart-wrap{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px}
+  .chart-wrap svg{width:100%;height:130px;display:block}
+
+  /* ── 매매 내역 ── */
+  .log{background:var(--panel);border:1px solid var(--line);border-radius:11px;overflow:hidden}
+  .log-row{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;
+    padding:11px 14px;border-bottom:1px solid var(--line);font-size:13px}
+  .log-row:last-child{border-bottom:none}
+  .tag{font-size:10px;font-weight:700;padding:3px 7px;border-radius:5px;letter-spacing:.3px}
+  .tag.buy{color:var(--up);background:var(--up-bg)}
+  .tag.sell{color:var(--down);background:var(--down-bg)}
+  .log-mid .nm{font-weight:600}
+  .log-mid .rs{font-size:11px;color:var(--ink-faint);margin-top:1px}
+  .log-right{text-align:right;font-size:12px;color:var(--ink-dim)}
+  .log-right .r{font-weight:700;font-size:13px}
+
+  /* ── 안전장치 상태 ── */
+  .safety{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+  .safe-item{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:11px 13px;display:flex;align-items:center;gap:10px}
+  .safe-ic{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .safe-ic.on{background:var(--up)}
+  .safe-ic.warn{background:var(--gold)}
+  .safe-txt .st{font-size:12.5px;font-weight:600}
+  .safe-txt .sd{font-size:11px;color:var(--ink-faint);margin-top:1px}
+
+  .up{color:var(--up)} .down{color:var(--down)}
+
+  .note{margin-top:18px;padding:13px 15px;background:var(--panel-2);
+    border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;
+    font-size:12px;color:var(--ink-dim);line-height:1.6}
+  .note b{color:var(--ink)}
+
+  @media(max-width:520px){
+    .stats{grid-template-columns:1fr 1fr}
+    .hero .total{font-size:32px}
+    .safety{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <span class="dot"></span>
+      <h1>자동매매 봇</h1>
+      <span class="mode" id="mode">모의투자</span>
+    </div>
+    <span class="updated" id="updated">—</span>
+  </header>
+
+  <!-- 총자산 -->
+  <div class="hero">
+    <div class="label">총 평가금액</div>
+    <div class="total"><span id="totalEquity" class="mono">0</span><span class="won">원</span></div>
+    <div class="delta">
+      <span class="pill" id="totalPill"><span id="totalRet">0%</span></span>
+      <span class="sub" id="totalProfit">—</span>
+    </div>
+  </div>
+
+  <!-- 요약 3카드 -->
+  <div class="stats">
+    <div class="stat">
+      <div class="k">현금</div>
+      <div class="v sm mono" id="cash">0</div>
+    </div>
+    <div class="stat">
+      <div class="k">보유 종목</div>
+      <div class="v" id="posCount">0</div>
+    </div>
+    <div class="stat">
+      <div class="k">오늘 실현손익</div>
+      <div class="v sm mono" id="todayPnl">0</div>
+    </div>
+  </div>
+
+  <!-- 수익곡선 -->
+  <div class="section">
+    <div class="section-head"><h2>수익 곡선</h2><span class="meta" id="chartMeta">최근 30일</span></div>
+    <div class="chart-wrap"><svg id="chart" viewBox="0 0 320 130" preserveAspectRatio="none"></svg></div>
+  </div>
+
+  <!-- 보유 종목 -->
+  <div class="section">
+    <div class="section-head"><h2>보유 종목</h2><span class="meta" id="holdMeta">—</span></div>
+    <div class="holdings" id="holdings"></div>
+  </div>
+
+  <!-- 매매 내역 -->
+  <div class="section">
+    <div class="section-head"><h2>최근 매매</h2><span class="meta">오늘</span></div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <!-- 안전장치 -->
+  <div class="section">
+    <div class="section-head"><h2>안전장치 상태</h2></div>
+    <div class="safety" id="safety"></div>
+  </div>
+
+  <div class="note" id="note">
+    봇이 실행될 때마다 <b>bot_state.json</b>을 갱신하고, 이 대시보드는 그 파일을 읽어
+    실제 계좌·매매·수익을 표시합니다.
+  </div>
+
+<script>
+const won = n => n.toLocaleString('ko-KR');
+const signed = n => (n>=0?'+':'') + won(n);
+
+function render(D){
+  document.getElementById('mode').textContent = D.mode;
+  document.getElementById('updated').textContent = '업데이트 ' + D.updated;
+  document.getElementById('totalEquity').textContent = won(D.equity);
+  document.getElementById('cash').textContent = won(D.cash);
+  document.getElementById('posCount').textContent = D.holdings.length + '개';
+
+  const pnlEl = document.getElementById('todayPnl');
+  pnlEl.textContent = signed(D.todayPnl);
+  pnlEl.className = 'v sm mono ' + (D.todayPnl>=0?'up':'down');
+
+  // 총수익률
+  const totalRet = ((D.equity/D.initial-1)*100);
+  const up = totalRet>=0;
+  const pill = document.getElementById('totalPill');
+  pill.className = 'pill ' + (up?'up':'down');
+  document.getElementById('totalRet').textContent = (up?'+':'') + totalRet.toFixed(2) + '%';
+  document.getElementById('totalProfit').textContent =
+    signed(D.equity-D.initial) + '원 · 원금 ' + won(D.initial);
+
+  // 수익곡선 SVG
+  drawChart(D.equityCurve, D.initial);
+
+  // 보유 종목
+  document.getElementById('holdMeta').textContent = D.holdings.length + '종목';
+  if(D.holdings.length === 0){
+    document.getElementById('holdings').innerHTML =
+      `<div class="holding" style="grid-template-columns:1fr;color:var(--ink-faint);font-size:12.5px">
+        보유 중인 종목이 없습니다.
+      </div>`;
+  }else{
+    const maxVal = Math.max(...D.holdings.map(h=>h.value));
+    document.getElementById('holdings').innerHTML = D.holdings.map(h=>{
+      const up = h.ret>=0;
+      const w = (h.value/maxVal*100).toFixed(0);
+      return `<div class="holding">
+        <div>
+          <div class="h-name">${h.name}</div>
+          <div class="h-sub mono">${h.code} · ${h.qty}주</div>
+        </div>
+        <div class="h-val"><div class="amt mono">${won(h.value)}</div>
+          <div class="h-sub">평가금액</div></div>
+        <div class="h-ret ${up?'up':'down'}">${up?'+':''}${h.ret.toFixed(1)}%</div>
+        <div class="bar"><span style="width:${w}%;background:${up?'var(--up)':'var(--down)'}"></span></div>
+      </div>`;
+    }).join('');
+  }
+
+  // 매매 내역
+  if(D.trades.length === 0){
+    document.getElementById('log').innerHTML =
+      `<div class="log-row" style="grid-template-columns:1fr;color:var(--ink-faint);font-size:12.5px">
+        오늘 체결된 매매가 없습니다.
+      </div>`;
+  }else{
+    document.getElementById('log').innerHTML = D.trades.map(t=>{
+      const isBuy = t.action==='BUY';
+      let right;
+      if(isBuy){
+        right = `<div class="log-right"><div class="mono">${won(t.price)}원</div></div>`;
+      }else{
+        const up = t.ret>=0;
+        right = `<div class="log-right"><div class="r ${up?'up':'down'}">${up?'+':''}${t.ret}%</div>
+          <div class="${up?'up':'down'}">${signed(t.profit)}원</div></div>`;
+      }
+      return `<div class="log-row">
+        <span class="tag ${isBuy?'buy':'sell'}">${isBuy?'매수':'매도'}</span>
+        <div class="log-mid"><div class="nm">${t.name}</div>
+          <div class="rs">${t.reason} · ${t.time}</div></div>
+        ${right}
+      </div>`;
+    }).join('');
+  }
+
+  // 안전장치
+  document.getElementById('safety').innerHTML = D.safety.map(s=>
+    `<div class="safe-item">
+      <span class="safe-ic ${s.state}"></span>
+      <div class="safe-txt"><div class="st">${s.name}</div><div class="sd">${s.desc}</div></div>
+    </div>`).join('');
+}
+
+function drawChart(data, base){
+  const svg = document.getElementById('chart');
+  const W=320,H=130,pad=6;
+  // 데이터가 1개뿐(운영 첫날)이면 x축 나눗셈이 0/0(NaN)이 되므로 점을 복제해 수평선으로 표시
+  if(data.length === 1) data = [data[0], data[0]];
+  const min=Math.min(...data,base), max=Math.max(...data,base);
+  const range=(max-min)||1;
+  const x=i=>pad+(i/(data.length-1))*(W-pad*2);
+  const y=v=>pad+(1-(v-min)/range)*(H-pad*2);
+  const pts=data.map((v,i)=>`${x(i)},${y(v)}`).join(' ');
+  const last=data[data.length-1];
+  const up=last>=base;
+  const col=up?'var(--up)':'var(--down)';
+  const areaPts=`${pad},${H-pad} ${pts} ${W-pad},${H-pad}`;
+  const baseY=y(base);
+  svg.innerHTML=`
+    <defs>
+      <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${up?'rgba(45,212,167,.22)':'rgba(246,120,94,.22)'}"/>
+        <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+      </linearGradient>
+    </defs>
+    <line x1="${pad}" y1="${baseY}" x2="${W-pad}" y2="${baseY}"
+      stroke="var(--ink-faint)" stroke-width="1" stroke-dasharray="3 3" opacity=".5"/>
+    <polygon points="${areaPts}" fill="url(#g)"/>
+    <polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2"
+      stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${x(data.length-1)}" cy="${y(last)}" r="3.5" fill="${col}"/>
+  `;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   실행 — bot_state.json을 fetch해서 렌더링.
+   trading_bot.py가 실행될 때마다 이 파일과 같은 폴더에 bot_state.json을
+   저장합니다. 아직 봇을 한 번도 실행하지 않았거나(파일 없음),
+   fetch 자체가 막혀 있으면(예: file://로 직접 열었을 때 CORS 차단)
+   SAMPLE로 몰래 대체하지 않고 화면에 안내 문구를 그대로 보여줍니다.
+
+   ⚠️ file:// 로 이 파일을 더블클릭해서 열면 fetch가 브라우저 보안 정책에
+   막혀 항상 실패합니다. 반드시 아래처럼 로컬 서버로 열어주세요:
+     python -m http.server
+     → http://localhost:8000/dashboard.html
+   ═══════════════════════════════════════════════════════════════ */
+async function boot(){
+  const noteEl = document.getElementById('note');
+  try{
+    const res = await fetch('bot_state.json', {cache: 'no-store'});
+    if(!res.ok) throw new Error('bot_state.json 없음 (status ' + res.status + ')');
+    const data = await res.json();
+    render(data);
+    noteEl.innerHTML = '<b>실데이터 표시 중.</b> 봇이 실행될 때마다 이 화면이 자동으로 최신 상태를 반영합니다 (새로고침 필요).';
+  }catch(err){
+    noteEl.innerHTML =
+      '<b>아직 봇을 실행한 기록이 없습니다.</b> trading_bot.py를 먼저 실행해보세요. ' +
+      'bot_state.json이 생성되면 이 화면에 실제 계좌·매매·수익이 표시됩니다.<br><br>' +
+      '이 화면을 파일 탐색기에서 더블클릭(file://)해서 열었다면 브라우저 보안 정책 때문에 ' +
+      'bot_state.json을 읽지 못할 수 있습니다. 터미널에서 <b>python -m http.server</b> 실행 후 ' +
+      '<b>http://localhost:8000/dashboard.html</b> 로 열어주세요.';
+  }
+}
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,68 @@
+name: Trading Bot Scan
+
+# 한국장 09:00~15:30 KST = 00:00~06:30 UTC (GitHub Actions cron은 UTC 기준).
+# 평일 5분마다 두 구간으로 나눠 커버한다 (서버_무인실행_가이드.md의 crontab 예시와 동일한 방식).
+# ⚠️ GitHub이 공식적으로 명시하는 한계: 부하가 높으면 예약 실행이 몇 분 밀리거나
+# 드물게 건너뛸 수 있다 — "정확히 5분마다"를 100% 보장하지 않는다.
+on:
+  schedule:
+    - cron: "*/5 0-5 * * 1-5"
+    - cron: "0-30/5 6 * * 1-5"
+  workflow_dispatch: {}
+
+# 이전 실행이 아직 안 끝났으면(레이트리밋 재시도 등으로 5분 넘게 걸리는 경우) 겹쳐 실행하지
+# 않는다 — 상태 파일을 서로 덮어쓰며 커밋하는 충돌을 막기 위함.
+concurrency:
+  group: trading-bot-scan
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: pip install python-kis python-dotenv pandas numpy matplotlib yfinance finance-datareader requests anthropic
+
+      - name: Write .env from GitHub Secrets
+        run: |
+          cat > .env << EOF
+          KIS_HTS_ID=${{ secrets.KIS_HTS_ID }}
+          KIS_ACCOUNT_NO=${{ secrets.KIS_ACCOUNT_NO }}
+          KIS_APP_KEY=${{ secrets.KIS_APP_KEY }}
+          KIS_APP_SECRET=${{ secrets.KIS_APP_SECRET }}
+          KIS_V_APP_KEY=${{ secrets.KIS_V_APP_KEY }}
+          KIS_V_APP_SECRET=${{ secrets.KIS_V_APP_SECRET }}
+          KIS_V_ACCOUNT_NO=${{ secrets.KIS_V_ACCOUNT_NO }}
+          KIS_VIRTUAL=${{ secrets.KIS_VIRTUAL }}
+          TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          BOT_STRATEGY=${{ secrets.BOT_STRATEGY }}
+          ENABLE_US_TRADING=${{ secrets.ENABLE_US_TRADING }}
+          ENABLE_CLOSING_TRADE=${{ secrets.ENABLE_CLOSING_TRADE }}
+          KELLY_FRACTION=0.25
+          KELLY_MAX_WEIGHT=0.25
+          KELLY_MIN_WEIGHT=0.05
+          EOF
+
+      - name: Run bot (1회 스캔)
+        run: python trading_bot.py
+
+      - name: Commit updated state back to repo
+        run: |
+          git config user.name "stockbot-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add -f bot_state.json logs/order_guard.json logs/kelly_history.json logs/news_cache_*.json 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "chore: bot 상태 업데이트 [skip ci]"
+          git pull --rebase --autostash origin main
+          git push
