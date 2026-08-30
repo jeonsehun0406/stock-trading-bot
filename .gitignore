@@ -7,7 +7,8 @@ kis_token*.json
 # GitHub Actions에서 스캔마다 새 컴퓨터로 실행되므로, 다음 실행으로 상태를 넘기기 위해
 # 아래는 일부러 추적한다 (모의투자 가상 데이터만 담겨있어 공개돼도 안전 — 계좌번호·API키는
 # 전부 .env/Secrets에만 있고 이 파일들엔 없음):
-#   bot_state.json, logs/order_guard.json, logs/kelly_history.json, logs/news_cache_*.json
+#   bot_state.json, logs/order_guard.json, logs/kelly_history.json, logs/news_cache_*.json,
+#   logs/daily_summary_sent.json
 bot_state.json.tmp
 
 # 상세 텍스트 로그는 실행마다 새로 생기고 저장소만 계속 불어나서 추적하지 않음

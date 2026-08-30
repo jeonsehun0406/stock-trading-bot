@@ -2,12 +2,15 @@ name: Trading Bot Scan
 
 # 한국장 09:00~15:30 KST = 00:00~06:30 UTC (GitHub Actions cron은 UTC 기준).
 # 평일 5분마다 두 구간으로 나눠 커버한다 (서버_무인실행_가이드.md의 crontab 예시와 동일한 방식).
+# 저녁 8시(20:00 KST = 11:00 UTC) 1회 실행 — 그날 매매를 국내/해외로 나눠 요약해 카톡/텔레그램으로
+# 보낸다 (trading_bot.py의 send_daily_summary가 저녁 8시 이후 하루 1번만 전송하도록 게이팅함).
 # ⚠️ GitHub이 공식적으로 명시하는 한계: 부하가 높으면 예약 실행이 몇 분 밀리거나
-# 드물게 건너뛸 수 있다 — "정확히 5분마다"를 100% 보장하지 않는다.
+# 드물게 건너뛸 수 있다 — "정확히 5분마다"/"정확히 20시"를 100% 보장하지 않는다.
 on:
   schedule:
     - cron: "*/5 0-5 * * 1-5"
     - cron: "0-30/5 6 * * 1-5"
+    - cron: "0 11 * * 1-5"
   workflow_dispatch: {}
 
 # 이전 실행이 아직 안 끝났으면(레이트리밋 재시도 등으로 5분 넘게 걸리는 경우) 겹쳐 실행하지
@@ -62,7 +65,7 @@ jobs:
         run: |
           git config user.name "stockbot-actions"
           git config user.email "actions@users.noreply.github.com"
-          for f in bot_state.json logs/order_guard.json logs/kelly_history.json logs/news_cache_*.json; do
+          for f in bot_state.json logs/order_guard.json logs/kelly_history.json logs/news_cache_*.json logs/daily_summary_sent.json; do
             [ -e "$f" ] && git add -f "$f"
           done
           git diff --cached --quiet || git commit -m "chore: bot 상태 업데이트 [skip ci]"

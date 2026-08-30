@@ -153,6 +153,31 @@ def _in_closing_trade_window() -> bool:
     return CLOSING_TRADE_START <= datetime.now().time() <= CLOSING_TRADE_END
 
 
+# 일일 요약 알림 — 스캔마다(5분마다) 보내던 걸 저녁 8시 이후 1회로 제한.
+# 20시 정각에 스케줄러가 딱 한 번만 돌 것으로 기대하지만, 혹시 그 시간대에 여러 번
+# 실행되거나(재시도 등) 스케줄이 밀려 여러 번 걸치더라도 하루 1번만 보내도록
+# logs/daily_summary_sent.json에 마지막으로 보낸 날짜를 기록해 이중 전송을 막는다.
+EVENING_SUMMARY_HOUR = 20
+DAILY_SUMMARY_SENT_FILE = "logs/daily_summary_sent.json"
+
+
+def _already_sent_daily_summary_today() -> bool:
+    try:
+        with open(DAILY_SUMMARY_SENT_FILE, encoding="utf-8") as f:
+            return json.load(f).get("date") == str(date.today())
+    except Exception:
+        return False
+
+
+def _mark_daily_summary_sent():
+    try:
+        os.makedirs("logs", exist_ok=True)
+        with open(DAILY_SUMMARY_SENT_FILE, "w", encoding="utf-8") as f:
+            json.dump({"date": str(date.today())}, f)
+    except Exception as e:
+        log.warning(f"[일일요약] 전송 기록 저장 실패: {e}")
+
+
 # ═════════════════════════════════════════════════════════════════════════
 #  유니버스(거래대상) 로드 — universe.py로 오프라인 생성한 universe.json이 있으면 사용,
 #  없거나 손상됐으면 위 하드코딩 기본 10종목으로 안전하게 폴백 (봇이 절대 죽으면 안 됨)
@@ -616,6 +641,7 @@ class TradingBot:
                      f"실제 체결은 장마감 후 확정 ({reason})")
             self.day_trades.append({
                 "action": "BUY",
+                "market": "KR",
                 "name": name,
                 "price": float(price),
                 "qty": int(qty),
@@ -651,6 +677,7 @@ class TradingBot:
             log.info(f"🇺🇸 ✅ 매수 {ticker} {actual_qty}주 @ ${price:,.2f} ({reason})")
         self.day_trades.append({
             "action": "BUY",
+            "market": market,
             "name": f"{name} (USD)" if market == "US" else name,
             "price": float(price) * rate,   # 대시보드는 항상 원화 기준 — US는 KIS 기준환율로 환산
             "qty": int(actual_qty),
@@ -730,6 +757,7 @@ class TradingBot:
         log.info(f"{tag}✅ 매도 {ticker} {sold_qty}주 수익률 {ret_pct:+.2f}% ({reason})")
         self.day_trades.append({
             "action": "SELL",
+            "market": market,
             "name": f"{name} (USD)" if market == "US" else name,
             "qty": int(sold_qty),
             "ret": round(ret_pct, 1),
@@ -804,15 +832,41 @@ class TradingBot:
 
     # ── 일일 요약 ──
     def send_daily_summary(self, initial_equity):
+        """저녁 8시 이후 하루 1번만 보낸다 (스캔마다 보내던 걸 제한).
+        반드시 save_state() 이후에 호출해야 한다 — bot_state.json의 누적 거래내역을
+        근거로 국내/해외를 나눠 집계하기 때문에, 이 프로세스(이번 스캔)의 매매만 담긴
+        self.day_stats가 아니라 그날 전체 스캔이 합쳐진 파일을 읽는다."""
+        if datetime.now().hour < EVENING_SUMMARY_HOUR:
+            return
+        if _already_sent_daily_summary_today():
+            return
+        if not HAS_NOTIFIER:
+            return
+
+        try:
+            with open(STATE_FILE, encoding="utf-8") as f:
+                state = json.load(f)
+        except Exception as e:
+            log.warning(f"[일일요약] bot_state.json 로드 실패 — 요약 스킵: {e}")
+            return
+
+        trades = state.get("trades", [])
+        kr_buy = sum(1 for t in trades if t.get("action") == "BUY" and t.get("market", "KR") == "KR")
+        kr_sell = sum(1 for t in trades if t.get("action") == "SELL" and t.get("market", "KR") == "KR")
+        kr_pnl = sum(t.get("profit", 0) for t in trades if t.get("action") == "SELL" and t.get("market", "KR") == "KR")
+        us_buy = sum(1 for t in trades if t.get("action") == "BUY" and t.get("market") == "US")
+        us_sell = sum(1 for t in trades if t.get("action") == "SELL" and t.get("market") == "US")
+        us_pnl = sum(t.get("profit", 0) for t in trades if t.get("action") == "SELL" and t.get("market") == "US")
+
         portfolio, total_cash, *_ = self._combined_snapshot()
-        if HAS_NOTIFIER:
-            notifier.notify_daily(
-                str(date.today()),
-                self.day_stats["buy"], self.day_stats["sell"],
-                self.day_stats["realized_pnl"],
-                portfolio,
-                total_cash, initial_equity,
-            )
+        notifier.notify_daily(
+            str(date.today()),
+            kr_buy, kr_sell, kr_pnl,
+            us_buy, us_sell, us_pnl,
+            SETTINGS["enable_us_trading"],
+            portfolio, total_cash, initial_equity,
+        )
+        _mark_daily_summary_sent()
 
     # ── 대시보드용 상태 저장 (bot_state.json) ──
     def save_state(self):
@@ -998,8 +1052,8 @@ def main():
     try:
         # 장중 N분마다 1회 스캔 (여기선 예시로 1회. 스케줄러가 반복 호출)
         bot.run_once(initial_equity)
-        bot.send_daily_summary(initial_equity)
         bot.save_state()
+        bot.send_daily_summary(initial_equity)
         log.info("스캔 완료")
     except KeyboardInterrupt:
         log.info("사용자 중단")

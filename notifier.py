@@ -101,20 +101,23 @@ def build_sell_message(ticker, ret_pct, profit_won, reason, portfolio, cash, ini
     return "\n".join(l for l in lines if l)
 
 
-def build_daily_summary(date, n_buy, n_sell, realized_pnl, portfolio, cash, initial):
-    """하루 마감 요약"""
+def build_daily_summary(date, kr_buy, kr_sell, kr_pnl, us_buy, us_sell, us_pnl,
+                         show_us, portfolio, cash, initial):
+    """하루 마감 요약 (국내/해외 구분, 저녁 8시 이후 하루 1번만 호출됨)"""
     total = sum(p["value"] for p in portfolio.values()) + cash
     total_ret = (total / initial - 1) * 100 if initial else 0
     lines = [f"📅 {date} 일일 요약",
              "─────────────",
-             f" 오늘 매수  {n_buy}건",
-             f" 오늘 매도  {n_sell}건",
-             f" 실현손익  {realized_pnl:+,.0f}원",
-             "─────────────",
-             f" 보유 종목  {len(portfolio)}개",
-             f" 현금  {format_won(cash)}",
-             f" 총 평가  {format_won(total)}",
-             f" 누적 수익률  {total_ret:+.2f}%"]
+             "🇰🇷 국내",
+             f" 매수 {kr_buy}건 · 매도 {kr_sell}건 · 실현손익 {kr_pnl:+,.0f}원"]
+    if show_us:
+        lines += ["🇺🇸 해외 (원화환산)",
+                  f" 매수 {us_buy}건 · 매도 {us_sell}건 · 실현손익 {us_pnl:+,.0f}원"]
+    lines += ["─────────────",
+              f" 보유 종목  {len(portfolio)}개",
+              f" 현금  {format_won(cash)}",
+              f" 총 평가  {format_won(total)}",
+              f" 누적 수익률  {total_ret:+.2f}%"]
     return "\n".join(lines)
 
 
@@ -230,9 +233,10 @@ def notify_sell(ticker, ret_pct, profit_won, reason, portfolio, cash, initial):
     return notify(build_sell_message(ticker, ret_pct, profit_won, reason,
                                      portfolio, cash, initial))
 
-def notify_daily(date, n_buy, n_sell, realized_pnl, portfolio, cash, initial):
-    return notify(build_daily_summary(date, n_buy, n_sell, realized_pnl,
-                                      portfolio, cash, initial))
+def notify_daily(date, kr_buy, kr_sell, kr_pnl, us_buy, us_sell, us_pnl,
+                  show_us, portfolio, cash, initial):
+    return notify(build_daily_summary(date, kr_buy, kr_sell, kr_pnl, us_buy, us_sell, us_pnl,
+                                      show_us, portfolio, cash, initial))
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -277,7 +281,7 @@ if __name__ == "__main__":
           {"삼성전자": {"value": 300000}}, 700000))
     print("\n" + build_sell_message("삼성전자", 6.80, 20400, "익절",
           {"SK하이닉스": {"value": 300000}}, 720400, 1000000))
-    print("\n" + build_daily_summary("2026-08-24", 2, 1, 20400,
+    print("\n" + build_daily_summary("2026-08-24", 2, 1, 20400, 1, 0, 5200, True,
           {"SK하이닉스": {"value": 305000}}, 720400, 1000000))
     print("\n" + "═" * 40)
     print("  설정 후 실제 전송 테스트:")
