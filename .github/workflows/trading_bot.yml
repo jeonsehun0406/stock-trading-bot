@@ -55,16 +55,6 @@ jobs:
           KELLY_MIN_WEIGHT=0.05
           EOF
 
-      - name: Debug (길이만 확인, 값은 출력 안 함)
-        run: |
-          python3 - <<'PYEOF'
-          import dotenv, os
-          dotenv.load_dotenv('.env')
-          for k in ['KIS_HTS_ID','KIS_ACCOUNT_NO','KIS_APP_KEY','KIS_APP_SECRET','KIS_V_APP_KEY','KIS_V_APP_SECRET','KIS_V_ACCOUNT_NO','KIS_VIRTUAL']:
-              v = os.getenv(k, '')
-              print(f'{k}: len={len(v)} head={v[:5]!r} tail={v[-5:]!r}')
-          PYEOF
-
       - name: Run bot (1회 스캔)
         run: python trading_bot.py
 
@@ -72,7 +62,9 @@ jobs:
         run: |
           git config user.name "stockbot-actions"
           git config user.email "actions@users.noreply.github.com"
-          git add -f bot_state.json logs/order_guard.json logs/kelly_history.json logs/news_cache_*.json 2>/dev/null || true
+          for f in bot_state.json logs/order_guard.json logs/kelly_history.json logs/news_cache_*.json; do
+            [ -e "$f" ] && git add -f "$f"
+          done
           git diff --cached --quiet || git commit -m "chore: bot 상태 업데이트 [skip ci]"
           git pull --rebase --autostash origin main
           git push
