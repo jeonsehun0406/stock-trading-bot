@@ -55,6 +55,11 @@ jobs:
           KELLY_MIN_WEIGHT=0.05
           EOF
 
+      - name: Debug (길이만 확인, 값은 출력 안 함)
+        run: |
+          echo "KIS_V_APP_SECRET length: $(grep -o '^KIS_V_APP_SECRET=.*' .env | cut -d= -f2- | wc -c)"
+          echo "expected: 181 (180자 + 개행문자)"
+
       - name: Run bot (1회 스캔)
         run: python trading_bot.py
 
