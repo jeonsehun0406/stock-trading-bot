@@ -256,10 +256,7 @@ class CircuitBreaker:
         daily_ret = (equity - self.start_equity) / self.start_equity
         if daily_ret <= self.limit and not self.halted:
             self.halted = True
-            msg = f"🚨 서킷브레이커 발동! 일일 손실 {daily_ret*100:.2f}% — 당일 매매 중단"
-            log.warning(msg)
-            if HAS_NOTIFIER:
-                notifier.notify(msg)
+            log.warning(f"🚨 서킷브레이커 발동! 일일 손실 {daily_ret*100:.2f}% — 당일 매매 중단")
         return not self.halted, daily_ret
 
 
