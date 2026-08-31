@@ -13,11 +13,14 @@ on:
     - cron: "0 11 * * 1-5"
   workflow_dispatch: {}
 
-# 이전 실행이 아직 안 끝났으면(레이트리밋 재시도 등으로 5분 넘게 걸리는 경우) 겹쳐 실행하지
-# 않는다 — 상태 파일을 서로 덮어쓰며 커밋하는 충돌을 막기 위함.
+# 이전 실행이 아직 안 끝났으면 겹쳐 실행하지 않는다 — 상태 파일을 서로 덮어쓰며 커밋하는
+# 충돌을 막기 위함. cancel-in-progress를 true로 둔다: false였을 때 레이트리밋으로 한 번
+# 오래 걸리면 뒤이은 5분 간격 트리거들이 계속 대기열에 쌓였다가 장 마감 몇 시간 뒤에까지
+# 밀려서 실행되는 문제가 실제로 발생했다(전부 "장종료" 에러로 허비됨). 최신 스캔이 낡은
+# 대기 스캔보다 훨씬 가치 있으므로 새 트리거가 오면 오래된 실행은 취소한다.
 concurrency:
   group: trading-bot-scan
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write

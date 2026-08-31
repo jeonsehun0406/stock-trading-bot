@@ -160,6 +160,12 @@ def _in_closing_trade_window() -> bool:
 EVENING_SUMMARY_HOUR = 20
 DAILY_SUMMARY_SENT_FILE = "logs/daily_summary_sent.json"
 
+# 매매 스캔(종목 186개 순회 + 뉴스필터 Claude 호출 + 매수/매도 시도)은 16시까지만 시도한다.
+# 정규장(15:30)+종가매매(15:40~16:00)를 넉넉히 덮고, 20시 저녁요약 실행 때는 스킵한다 —
+# 그 시각엔 항상 "모의투자 장종료"로 실패할 걸 알면서도 186종목 전부 조회하고 Claude
+# 뉴스필터까지 호출하는 건 시간과 API 비용 낭비이기 때문 (실제로 확인된 문제).
+MARKET_SCAN_END_HOUR = 16
+
 
 def _already_sent_daily_summary_today() -> bool:
     try:
@@ -1065,7 +1071,12 @@ def main():
     # [5] 전체를 try로 감싸 — 봇이 죽으면 알림
     try:
         # 장중 N분마다 1회 스캔 (여기선 예시로 1회. 스케줄러가 반복 호출)
-        bot.run_once(initial_equity)
+        # 16시 이후(저녁 8시 요약 실행 등)엔 스캔을 생략한다 — 그 시각엔 항상 장이 닫혀
+        # 있어서 매수/매도가 전부 실패할 걸 알면서도 종목 186개+뉴스필터를 도는 낭비를 막는다.
+        if datetime.now().hour < MARKET_SCAN_END_HOUR:
+            bot.run_once(initial_equity)
+        else:
+            log.info(f"{MARKET_SCAN_END_HOUR}시 이후 — 매매 스캔 생략, 상태 저장/요약만 진행")
         bot.save_state()
         bot.send_daily_summary(initial_equity)
         log.info("스캔 완료")
