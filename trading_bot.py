@@ -482,10 +482,15 @@ class TradingBot:
     # ── 계좌 상태 (한국, 원화) ──
     def get_account(self):
         """한국 보유 종목 + 원화 현금 조회. 기존 호출부(뉴스필터/전략연결/대시보드연동/
-        실전예외처리)가 그대로 쓰는 시그니처라 절대 바꾸지 않는다."""
+        실전예외처리)가 그대로 쓰는 시그니처라 절대 바꾸지 않는다.
+
+        ⚠️ 현금은 잔고조회의 예수금(dnca_tot_amt)이 아니라 매수가능조회의 주문가능현금
+        (ord_psbl_cash)을 쓴다. 실제로 확인한 결과 모의투자에서는 dnca_tot_amt가 매수
+        체결 후에도(하루가 지나도) 갱신되지 않는 반면, ord_psbl_cash는 주문 직후 바로
+        반영된다. symbol은 어떤 종목이든 상관없다 — 주문가능현금 자체는 계좌 전체
+        현금 수치라 특정 종목과 무관하고, symbol/price는 그 종목 기준 최대매수수량
+        계산에만 쓰인다(우리는 amount만 읽으므로 영향 없음)."""
         balance = self.kis.account().balance(country="KR")
-        deposit = balance.deposit("KRW")
-        cash = float(deposit.amount) if deposit else 0.0  # 예수금(현금)
         positions = {}
         for stock in balance.stocks:
             positions[stock.symbol] = {
@@ -494,6 +499,15 @@ class TradingBot:
                 "avg_price": float(stock.purchase_price),  # 매입 평단가
                 "profit_rate": float(stock.profit_rate),
             }
+
+        ref_symbol = next(iter(positions), None) or SETTINGS["kr_universe"][0]
+        try:
+            cash = float(self.kis.account().orderable_amount(market="KRX", symbol=ref_symbol).amount)
+        except Exception as e:
+            log.warning(f"[계좌] 주문가능현금 조회 실패 — 예수금총금액으로 폴백: {type(e).__name__}: {e}")
+            deposit = balance.deposit("KRW")
+            cash = float(deposit.amount) if deposit else 0.0
+
         return positions, cash
 
     # ── 계좌 상태 (미국, 달러) — ENABLE_US_TRADING=true일 때만 호출 ──
