@@ -568,8 +568,8 @@ class TradingBot:
         if SETTINGS["enable_us_trading"]:
             us_positions, usd_cash, usd_rate = self.get_usd_account()
 
-        portfolio = {t: {"value": p["value"]} for t, p in kr_positions.items()}
-        portfolio.update({f"🇺🇸{t}": {"value": p["value"] * usd_rate} for t, p in us_positions.items()})
+        portfolio = {f"{KR_NAMES.get(t, t)}({t})": {"value": p["value"]} for t, p in kr_positions.items()}
+        portfolio.update({f"🇺🇸{US_NAMES.get(t, t)}({t})": {"value": p["value"] * usd_rate} for t, p in us_positions.items()})
         total_cash = kr_cash + usd_cash * usd_rate
         return portfolio, total_cash, kr_positions, kr_cash, us_positions, usd_cash, usd_rate
 
@@ -670,7 +670,7 @@ class TradingBot:
             })
             if HAS_NOTIFIER:
                 portfolio, total_cash, _, _, _, _, _ = self._combined_snapshot()
-                notifier.notify_buy(f"[종가매매 접수] {ticker}", float(price) * qty, reason, portfolio, total_cash)
+                notifier.notify_buy(f"[종가매매 접수] {name}({ticker})", float(price) * qty, reason, portfolio, total_cash)
             return
 
         # 주문 성공(예외 없음) ≠ 체결. 잔고를 재조회해 실제 체결 수량을 확인한다.
@@ -707,7 +707,7 @@ class TradingBot:
         if HAS_NOTIFIER:
             # 알림은 항상 한국+미국 통합 스냅샷(원화 환산)을 보여준다 — market="KR"이고
             # enable_us_trading=false면 portfolio/total_cash가 기존 KR 전용 결과와 동일하다.
-            notifier.notify_buy(f"{tag}{ticker}", buy_amount * rate, reason, portfolio, total_cash)
+            notifier.notify_buy(f"{tag}{name}({ticker})", buy_amount * rate, reason, portfolio, total_cash)
 
     # ── 매도 ──
     def try_sell(self, ticker, df, position, initial_equity, market="KR"):
@@ -788,7 +788,7 @@ class TradingBot:
         if HAS_NOTIFIER:
             # 알림은 항상 한국+미국 통합 스냅샷(원화 환산)을 보여준다 — market="KR"이고
             # enable_us_trading=false면 portfolio/total_cash가 기존 KR 전용 결과와 동일하다.
-            notifier.notify_sell(f"{tag}{ticker}", ret_pct, profit * rate, reason,
+            notifier.notify_sell(f"{tag}{name}({ticker})", ret_pct, profit * rate, reason,
                                  portfolio, total_cash, initial_equity)
 
     # ── 1회 스캔 (장중 주기적 호출) ──
