@@ -461,8 +461,8 @@ class TradingBot:
 
         mode = "모의투자" if SETTINGS["virtual"] else "🔴 실전투자"
         log.info(f"KIS API 연결 완료 — {mode}")
-        if HAS_NOTIFIER:
-            notifier.notify(f"🤖 자동매매 봇 시작 ({mode})")
+        # 스캔마다(5분마다) 매번 알림이 와서 스팸이 되므로 카톡/텔레그램 알림은 보내지 않는다.
+        # "잘 돌고 있다"는 신호는 저녁 8시 일일 요약이 대신한다.
 
     # ── 시세 ──
     def get_chart(self, ticker, market="KR"):
