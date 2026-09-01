@@ -142,6 +142,12 @@ US_NAMES = {}
 # 대형주 정상 호가 스프레드보다 넉넉한 0.5%로 설정 (필요시 조정 가능하도록 상수로 분리).
 US_LIMIT_SLIPPAGE = 0.005
 
+# 상태 파일 저장 위치 — 기본은 스크립트와 같은 폴더(로컬/GitHub Actions에서 기존과 동일하게
+# 동작). Railway처럼 실행마다 컨테이너가 새로 뜨는 환경에서는 DATA_DIR을 영구 볼륨 경로로
+# 지정해야 order_guard/kelly_history/뉴스캐시/bot_state가 다음 실행으로 이어진다.
+DATA_DIR = os.getenv("DATA_DIR", str(Path(__file__).resolve().parent))
+Path(f"{DATA_DIR}/logs").mkdir(parents=True, exist_ok=True)
+
 # KST 명시적 타임존 — GitHub Actions 러너(UTC)에서도 항상 정확한 한국시간을 쓰기 위함.
 # ⚠️ 예전엔 "서버 시계가 KST로 맞춰져 있다"고 가정하고 datetime.now()를 그대로 썼는데,
 # 로컬 PC/한국 서버에선 맞았지만 GitHub Actions로 옮긴 뒤론 러너가 UTC라서 시간 관련
@@ -169,7 +175,7 @@ def _in_closing_trade_window() -> bool:
 # 실행되거나(재시도 등) 스케줄이 밀려 여러 번 걸치더라도 하루 1번만 보내도록
 # logs/daily_summary_sent.json에 마지막으로 보낸 날짜를 기록해 이중 전송을 막는다.
 EVENING_SUMMARY_HOUR = 20
-DAILY_SUMMARY_SENT_FILE = "logs/daily_summary_sent.json"
+DAILY_SUMMARY_SENT_FILE = f"{DATA_DIR}/logs/daily_summary_sent.json"
 
 # 매매 스캔(종목 186개 순회 + 뉴스필터 Claude 호출 + 매수/매도 시도)은 16시까지만 시도한다.
 # 정규장(15:30)+종가매매(15:40~16:00)를 넉넉히 덮고, 20시 저녁요약 실행 때는 스킵한다 —
@@ -188,7 +194,7 @@ def _already_sent_daily_summary_today() -> bool:
 
 def _mark_daily_summary_sent():
     try:
-        os.makedirs("logs", exist_ok=True)
+        os.makedirs(f"{DATA_DIR}/logs", exist_ok=True)
         with open(DAILY_SUMMARY_SENT_FILE, "w", encoding="utf-8") as f:
             json.dump({"date": str(_now_kst().date())}, f)
     except Exception as e:
@@ -235,19 +241,18 @@ def _load_universe():
 
 _load_universe()
 
-# 대시보드(dashboard.html)가 읽는 상태 파일 — 항상 이 스크립트와 같은 폴더에 저장
-STATE_FILE = Path(__file__).resolve().parent / "bot_state.json"
+# 대시보드(dashboard.html)가 읽는 상태 파일
+STATE_FILE = Path(DATA_DIR) / "bot_state.json"
 
 
 # ═════════════════════════════════════════════════════════════════════════
 #  [4] 로깅 설정
 # ═════════════════════════════════════════════════════════════════════════
-Path("logs").mkdir(exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler(f"logs/bot_{_now_kst().date()}.log", encoding="utf-8"),
+        logging.FileHandler(f"{DATA_DIR}/logs/bot_{_now_kst().date()}.log", encoding="utf-8"),
         logging.StreamHandler(),
     ],
 )
@@ -259,7 +264,7 @@ log = logging.getLogger("bot")
 # ═════════════════════════════════════════════════════════════════════════
 class OrderGuard:
     """[1] 중복 주문 방지 — 같은 종목+액션은 하루 1회"""
-    def __init__(self, state_file="logs/order_guard.json"):
+    def __init__(self, state_file=f"{DATA_DIR}/logs/order_guard.json"):
         self.state_file = state_file
         self.today = str(_now_kst().date())
         self.done = self._load()
@@ -315,7 +320,7 @@ class KellyTracker:
     - logs/kelly_history.json에 영구 저장 — 스케줄러가 스캔마다 프로세스를 재시작해도
       이력이 유지된다. 파일이 없거나 손상돼도 절대 죽지 않고 빈 이력(균등분배)으로 폴백한다.
     """
-    def __init__(self, state_file="logs/kelly_history.json",
+    def __init__(self, state_file=f"{DATA_DIR}/logs/kelly_history.json",
                  kelly_fraction=0.25, max_weight=0.25, min_weight=0.05):
         self.state_file = state_file
         self.kelly_fraction = kelly_fraction

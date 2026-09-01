@@ -23,3 +23,11 @@ venv/
 # 백테스트 산출물
 *.png
 *.csv
+
+# Railway 배포 조사용으로 설치한 Node.js 툴(railway IaC SDK) — 파이썬 프로젝트라 커밋 안 함.
+# 실제 배포 설정(크론·볼륨·환경변수)은 Railway API로 직접 적용해서 .railway/railway.ts는
+# 더 이상 실제 상태와 일치하지 않음 — 필요하면 `railway config pull`로 새로 받을 것.
+node_modules/
+package.json
+package-lock.json
+.railway/

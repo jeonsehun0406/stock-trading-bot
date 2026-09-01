@@ -1,0 +1,9 @@
+python-kis
+python-dotenv
+pandas
+numpy
+matplotlib
+yfinance
+finance-datareader
+requests
+anthropic

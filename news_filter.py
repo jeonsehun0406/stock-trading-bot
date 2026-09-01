@@ -65,7 +65,9 @@ HEADERS = {
     "Referer": "https://finance.naver.com/item/news.naver",
 }
 
-CACHE_DIR = "logs"
+# Railway처럼 실행마다 컨테이너가 새로 뜨는 환경에서는 DATA_DIR을 영구 볼륨 경로로 지정해야
+# 캐시가 다음 실행으로 이어진다 (trading_bot.py의 DATA_DIR과 동일한 규칙).
+CACHE_DIR = os.path.join(os.getenv("DATA_DIR", "."), "logs")
 
 
 # ═════════════════════════════════════════════════════════════════════════
