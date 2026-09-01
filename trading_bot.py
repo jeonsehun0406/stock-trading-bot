@@ -894,7 +894,17 @@ class TradingBot:
         us_sell = sum(1 for t in trades if t.get("action") == "SELL" and t.get("market") == "US")
         us_pnl = sum(t.get("profit", 0) for t in trades if t.get("action") == "SELL" and t.get("market") == "US")
 
-        portfolio, total_cash, *_ = self._combined_snapshot()
+        try:
+            portfolio, total_cash, *_ = self._combined_snapshot()
+        except Exception as e:
+            # KIS 서버 쪽 일시적 오류(예: EGW00300 게이트웨이 라우팅 오류)로 계좌 재조회가
+            # 실패해도, 이미 스캔·상태저장은 끝난 뒤라 치명적인 상황이 아니다. 여기서
+            # 예외를 그대로 흘려보내면 main()의 최상위 처리에서 "🚨 봇 다운" 알림이
+            # 나가버리는데, 이건 봇이 죽은 게 아니라 요약 하나를 못 보낸 것뿐이므로
+            # 다음 실행(같은 저녁 시간대에도 5분마다 재시도됨)에서 다시 시도하도록 조용히
+            # 넘어간다.
+            log.warning(f"[일일요약] 계좌 조회 실패 — 요약 스킵, 다음 실행에서 재시도: {type(e).__name__}: {e}")
+            return
         notifier.notify_daily(
             str(_now_kst().date()),
             kr_buy, kr_sell, kr_pnl,
