@@ -32,7 +32,7 @@ import os
 import json
 import time
 import logging
-from datetime import datetime, date, time as dt_time
+from datetime import datetime, time as dt_time, timezone, timedelta
 from pathlib import Path
 
 if sys.platform == "win32":
@@ -142,15 +142,26 @@ US_NAMES = {}
 # 대형주 정상 호가 스프레드보다 넉넉한 0.5%로 설정 (필요시 조정 가능하도록 상수로 분리).
 US_LIMIT_SLIPPAGE = 0.005
 
+# KST 명시적 타임존 — GitHub Actions 러너(UTC)에서도 항상 정확한 한국시간을 쓰기 위함.
+# ⚠️ 예전엔 "서버 시계가 KST로 맞춰져 있다"고 가정하고 datetime.now()를 그대로 썼는데,
+# 로컬 PC/한국 서버에선 맞았지만 GitHub Actions로 옮긴 뒤론 러너가 UTC라서 시간 관련
+# 게이팅(종가매매 시간대·저녁요약·매매스캔 컷오프)이 전부 9시간 어긋나 있었다 — 실제로
+# 그 때문에 저녁 스캔이 계속 스킵 안 되고 돌면서 "장종료" 에러만 반복 발생하는 걸 확인함.
+KST = timezone(timedelta(hours=9))
+
+
+def _now_kst() -> datetime:
+    return datetime.now(KST)
+
+
 # 장후시간외(종가) 주문 접수 시간대 — KRX 정규장(15:30) 마감 후 15:40~16:00 KST에만
-# 그날 종가로 체결되는 장후시간외 주문이 접수된다. 서버 시계가 KST로 맞춰져 있다는 전제
-# (서버_무인실행_가이드.md와 동일 전제) — datetime.now()를 그대로 KST로 취급한다.
+# 그날 종가로 체결되는 장후시간외 주문이 접수된다.
 CLOSING_TRADE_START = dt_time(15, 40)
 CLOSING_TRADE_END = dt_time(16, 0)
 
 
 def _in_closing_trade_window() -> bool:
-    return CLOSING_TRADE_START <= datetime.now().time() <= CLOSING_TRADE_END
+    return CLOSING_TRADE_START <= _now_kst().time() <= CLOSING_TRADE_END
 
 
 # 일일 요약 알림 — 스캔마다(5분마다) 보내던 걸 저녁 8시 이후 1회로 제한.
@@ -170,7 +181,7 @@ MARKET_SCAN_END_HOUR = 16
 def _already_sent_daily_summary_today() -> bool:
     try:
         with open(DAILY_SUMMARY_SENT_FILE, encoding="utf-8") as f:
-            return json.load(f).get("date") == str(date.today())
+            return json.load(f).get("date") == str(_now_kst().date())
     except Exception:
         return False
 
@@ -179,7 +190,7 @@ def _mark_daily_summary_sent():
     try:
         os.makedirs("logs", exist_ok=True)
         with open(DAILY_SUMMARY_SENT_FILE, "w", encoding="utf-8") as f:
-            json.dump({"date": str(date.today())}, f)
+            json.dump({"date": str(_now_kst().date())}, f)
     except Exception as e:
         log.warning(f"[일일요약] 전송 기록 저장 실패: {e}")
 
@@ -236,7 +247,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler(f"logs/bot_{date.today()}.log", encoding="utf-8"),
+        logging.FileHandler(f"logs/bot_{_now_kst().date()}.log", encoding="utf-8"),
         logging.StreamHandler(),
     ],
 )
@@ -250,7 +261,7 @@ class OrderGuard:
     """[1] 중복 주문 방지 — 같은 종목+액션은 하루 1회"""
     def __init__(self, state_file="logs/order_guard.json"):
         self.state_file = state_file
-        self.today = str(date.today())
+        self.today = str(_now_kst().date())
         self.done = self._load()
 
     def _load(self):
@@ -478,7 +489,7 @@ class TradingBot:
         # 전략이 요구하는 최소 거래일수(required_days) 기준으로 조회 기간 산정
         # 평일 비율(7/5)로 달력일 환산 + 휴장일 대비 버퍼 60일
         needed_days = int(self.strategy.required_days * 7 / 5) + 60
-        start = date.today() - timedelta(days=needed_days)
+        start = _now_kst().date() - timedelta(days=needed_days)
         # adjust=True → 수정주가 (액면분할/배당 반영, 지표 정확도 필수)
         chart = stock.chart(start=start, period="day", adjust=True).df()
         if chart is None or len(chart) < self.strategy.required_days:
@@ -666,7 +677,7 @@ class TradingBot:
                 "price": float(price),
                 "qty": int(qty),
                 "reason": f"[종가매매 접수, 체결 미확정] {reason}",
-                "time": datetime.now().strftime("%H:%M"),
+                "time": _now_kst().strftime("%H:%M"),
             })
             if HAS_NOTIFIER:
                 portfolio, total_cash, _, _, _, _, _ = self._combined_snapshot()
@@ -702,7 +713,7 @@ class TradingBot:
             "price": float(price) * rate,   # 대시보드는 항상 원화 기준 — US는 KIS 기준환율로 환산
             "qty": int(actual_qty),
             "reason": reason,
-            "time": datetime.now().strftime("%H:%M"),
+            "time": _now_kst().strftime("%H:%M"),
         })
         if HAS_NOTIFIER:
             # 알림은 항상 한국+미국 통합 스냅샷(원화 환산)을 보여준다 — market="KR"이고
@@ -783,7 +794,7 @@ class TradingBot:
             "ret": round(ret_pct, 1),
             "profit": round(profit * rate),   # 대시보드는 항상 원화 기준
             "reason": reason,
-            "time": datetime.now().strftime("%H:%M"),
+            "time": _now_kst().strftime("%H:%M"),
         })
         if HAS_NOTIFIER:
             # 알림은 항상 한국+미국 통합 스냅샷(원화 환산)을 보여준다 — market="KR"이고
@@ -856,7 +867,7 @@ class TradingBot:
         반드시 save_state() 이후에 호출해야 한다 — bot_state.json의 누적 거래내역을
         근거로 국내/해외를 나눠 집계하기 때문에, 이 프로세스(이번 스캔)의 매매만 담긴
         self.day_stats가 아니라 그날 전체 스캔이 합쳐진 파일을 읽는다."""
-        if datetime.now().hour < EVENING_SUMMARY_HOUR:
+        if _now_kst().hour < EVENING_SUMMARY_HOUR:
             return
         if _already_sent_daily_summary_today():
             return
@@ -880,7 +891,7 @@ class TradingBot:
 
         portfolio, total_cash, *_ = self._combined_snapshot()
         notifier.notify_daily(
-            str(date.today()),
+            str(_now_kst().date()),
             kr_buy, kr_sell, kr_pnl,
             us_buy, us_sell, us_pnl,
             SETTINGS["enable_us_trading"],
@@ -899,7 +910,7 @@ class TradingBot:
             log.warning(f"[대시보드] bot_state.json 저장 실패 (매매엔 영향 없음): {type(e).__name__}: {e}")
 
     def _save_state_impl(self):
-        today_str = str(date.today())
+        today_str = str(_now_kst().date())
 
         # 스케줄러가 하루에 여러 번 호출하므로, 기존 파일이 있으면 이어서 갱신
         existing = {}
@@ -1026,7 +1037,7 @@ class TradingBot:
 
         state = {
             "mode": "모의투자" if SETTINGS["virtual"] else "실전투자",
-            "updated": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "updated": _now_kst().strftime("%Y-%m-%d %H:%M"),
             "initial": initial,
             "cash": display_cash,
             "equity": equity,
@@ -1073,7 +1084,7 @@ def main():
         # 장중 N분마다 1회 스캔 (여기선 예시로 1회. 스케줄러가 반복 호출)
         # 16시 이후(저녁 8시 요약 실행 등)엔 스캔을 생략한다 — 그 시각엔 항상 장이 닫혀
         # 있어서 매수/매도가 전부 실패할 걸 알면서도 종목 186개+뉴스필터를 도는 낭비를 막는다.
-        if datetime.now().hour < MARKET_SCAN_END_HOUR:
+        if _now_kst().hour < MARKET_SCAN_END_HOUR:
             bot.run_once(initial_equity)
         else:
             log.info(f"{MARKET_SCAN_END_HOUR}시 이후 — 매매 스캔 생략, 상태 저장/요약만 진행")
