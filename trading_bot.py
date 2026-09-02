@@ -511,8 +511,16 @@ class TradingBot:
         체결 후에도(하루가 지나도) 갱신되지 않는 반면, ord_psbl_cash는 주문 직후 바로
         반영된다. symbol은 어떤 종목이든 상관없다 — 주문가능현금 자체는 계좌 전체
         현금 수치라 특정 종목과 무관하고, symbol/price는 그 종목 기준 최대매수수량
-        계산에만 쓰인다(우리는 amount만 읽으므로 영향 없음)."""
-        balance = self.kis.account().balance(country="KR")
+        계산에만 쓰인다(우리는 amount만 읽으므로 영향 없음).
+
+        ⚠️ 계좌조회는 다른 API 호출(시세·주문)과 달리 재시도 없이 한 번만 호출하고
+        있었는데, 실제로 KIS 서버 쪽 일시적 오류(ConnectionError, 500 게이트웨이 오류
+        등)로 하루 종일 여러 번 실패해서 "봇 다운" 알림이 반복적으로 나가는 걸 확인함.
+        다른 호출들과 동일하게 with_retry로 감싼다."""
+        balance = with_retry(lambda: self.kis.account().balance(country="KR"),
+                              SETTINGS["max_retries"], desc="계좌조회(KR)")
+        if balance is None:
+            raise RuntimeError("계좌 조회(KR) 실패 — 최대 재시도 초과")
         positions = {}
         for stock in balance.stocks:
             positions[stock.symbol] = {
@@ -543,7 +551,10 @@ class TradingBot:
           - usd_krw_rate : KIS 기준환율. 대시보드/서킷브레이커의 "원화 환산 총자산" 표시용으로만
             쓰고, 매수 예산 계산에는 쓰지 않는다.
         """
-        balance = self.kis.account().balance(country="US")
+        balance = with_retry(lambda: self.kis.account().balance(country="US"),
+                              SETTINGS["max_retries"], desc="계좌조회(US)")
+        if balance is None:
+            raise RuntimeError("계좌 조회(US) 실패 — 최대 재시도 초과")
         deposit = balance.deposit("USD")
         usd_cash = float(deposit.amount) if deposit else 0.0
         usd_krw_rate = float(deposit.exchange_rate) if deposit and deposit.exchange_rate else 0.0
