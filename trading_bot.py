@@ -600,6 +600,26 @@ class TradingBot:
         total_cash = kr_cash + usd_cash * usd_rate
         return portfolio, total_cash, kr_positions, kr_cash, us_positions, usd_cash, usd_rate
 
+    def _settled_snapshot(self, ticker, market, max_checks=3, interval=2.0):
+        """주문 직후 체결 확인용 계좌 재조회 — 곧바로 한 번만 조회하면 KIS 서버가 아직
+        체결을 완전히 반영하기 전 상태를 읽어버리는 경우가 실제로 확인됐다(12주 매수
+        주문인데 재조회 시점에 3주만 잡혀서 알림·기록에 3주로 남고, 몇 분 뒤 다시 보면
+        12주로 정상 반영돼 있었음 — 체결 자체는 정상, 재조회 타이밍만 너무 빨랐던 것).
+        그래서 해당 종목 보유수량이 연속 두 번 같게 나올 때까지(또는 최대 시도까지)
+        짧은 간격으로 다시 조회해 안정된 값을 쓴다."""
+        snapshot = self._combined_snapshot()
+        pos_lookup = snapshot[2] if market == "KR" else snapshot[4]
+        last_qty = pos_lookup.get(ticker, {}).get("qty", 0)
+        for _ in range(max_checks - 1):
+            time.sleep(interval)
+            snapshot = self._combined_snapshot()
+            pos_lookup = snapshot[2] if market == "KR" else snapshot[4]
+            qty = pos_lookup.get(ticker, {}).get("qty", 0)
+            if qty == last_qty:
+                break
+            last_qty = qty
+        return snapshot
+
     # ── 매수 ──
     def try_buy(self, ticker, df, positions, cash, total_position_count, market="KR"):
         """market: "KR"(원화, 시장가) 또는 "US"(USD, 지정가+슬리피지 버퍼).
@@ -701,8 +721,11 @@ class TradingBot:
             return
 
         # 주문 성공(예외 없음) ≠ 체결. 잔고를 재조회해 실제 체결 수량을 확인한다.
-        # (모의투자는 미체결 조회를 지원하지 않으므로 잔고 대조 방식을 사용)
-        portfolio, total_cash, kr_positions, kr_cash, us_positions, usd_cash, usd_rate = self._combined_snapshot()
+        # (모의투자는 미체결 조회를 지원하지 않으므로 잔고 대조 방식을 사용, 값이 안정될
+        # 때까지 재확인하는 _settled_snapshot 사용 — 바로 조회하면 아직 다 안 잡힌 값이
+        # 나올 수 있음을 실제로 확인함)
+        portfolio, total_cash, kr_positions, kr_cash, us_positions, usd_cash, usd_rate = \
+            self._settled_snapshot(ticker, market)
         pos_lookup, rate = (kr_positions, 1.0) if market == "KR" else (us_positions, usd_rate)
         actual_qty = pos_lookup.get(ticker, {}).get("qty", 0)
 
@@ -768,8 +791,10 @@ class TradingBot:
                 notifier.notify(f"🚨 {tag}{ticker} 매도 실패 — 손절/익절 미실행, 수동 확인 필요 ({reason})")
             return
 
-        # 주문 성공(예외 없음) ≠ 전량 체결. 잔고를 재조회해 실제 잔여 수량을 확인한다.
-        portfolio, total_cash, kr_positions, kr_cash, us_positions, usd_cash, usd_rate = self._combined_snapshot()
+        # 주문 성공(예외 없음) ≠ 전량 체결. 잔고를 재조회해 실제 잔여 수량을 확인한다
+        # (값이 안정될 때까지 재확인하는 _settled_snapshot 사용 — 매수 쪽과 동일한 이유).
+        portfolio, total_cash, kr_positions, kr_cash, us_positions, usd_cash, usd_rate = \
+            self._settled_snapshot(ticker, market)
         pos_lookup, rate = (kr_positions, 1.0) if market == "KR" else (us_positions, usd_rate)
         remaining_qty = pos_lookup.get(ticker, {}).get("qty", 0)
         sold_qty = position["qty"] - remaining_qty
