@@ -102,13 +102,11 @@ def build_sell_message(ticker, ret_pct, profit_won, reason, portfolio, cash, ini
 
 
 def _holding_lines(holdings):
-    """종목별 '이름  매입 000원(±0.0%), 평가 000원' 한 줄씩"""
+    """종목별로 이름 한 줄 + '평단가 000원 · 수익 ±0.0%' 한 줄"""
     lines = []
     for h in holdings:
-        lines.append(
-            f" {h['name']}  매입 {format_won(h['buy_amount'])}({h['profit_rate']:+.1f}%), "
-            f"평가 {format_won(h['value'])}"
-        )
+        lines.append(f" {h['name']}")
+        lines.append(f"  평단가 {format_won(h['avg_price'])} · 수익 {h['profit_rate']:+.1f}%")
     return lines
 
 
@@ -121,18 +119,19 @@ def build_daily_summary(date, kr_buy, kr_sell, kr_pnl, us_buy, us_sell, us_pnl,
              "─────────────",
              "🇰🇷 국내",
              f" 매수 {kr_buy}건 · 매도 {kr_sell}건 · 실현손익 {kr_pnl:+,.0f}원"]
-    if kr_holdings:
-        lines += _holding_lines(kr_holdings)
     if show_us:
         lines += ["🇺🇸 해외 (원화환산)",
                   f" 매수 {us_buy}건 · 매도 {us_sell}건 · 실현손익 {us_pnl:+,.0f}원"]
-        if us_holdings:
-            lines += _holding_lines(us_holdings)
+
+    holdings = (kr_holdings or []) + (us_holdings or [])
+    if holdings:
+        lines.append("─────────────")
+        lines += _holding_lines(holdings)
+
     lines += ["─────────────",
-              f" 보유 종목  {len(portfolio)}개",
               f" 현금  {format_won(cash)}",
-              f" 총 평가  {format_won(total)}",
-              f" 누적 수익률  {total_ret:+.2f}%"]
+              f" 누적 수익률  {total_ret:+.2f}%",
+              f" 총 평가  {format_won(total)}"]
     return "\n".join(lines)
 
 

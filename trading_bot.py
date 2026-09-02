@@ -946,12 +946,12 @@ class TradingBot:
         # 종목별 매입금액·수익률·평가금액 — 해외는 원화환산해서 국내와 같은 단위로 보여준다
         # (요약 메시지 전체가 항상 원화 기준이라는 기존 관례와 통일).
         kr_holdings = [
-            {"name": KR_NAMES.get(code, code), "buy_amount": p["avg_price"] * p["qty"],
+            {"name": KR_NAMES.get(code, code), "avg_price": p["avg_price"],
              "profit_rate": p["profit_rate"], "value": p["value"]}
             for code, p in kr_positions.items()
         ]
         us_holdings = [
-            {"name": US_NAMES.get(code, code), "buy_amount": p["avg_price"] * p["qty"] * usd_rate,
+            {"name": US_NAMES.get(code, code), "avg_price": p["avg_price"] * usd_rate,
              "profit_rate": p["profit_rate"], "value": p["value"] * usd_rate}
             for code, p in us_positions.items()
         ]
