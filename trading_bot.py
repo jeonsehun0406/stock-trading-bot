@@ -931,7 +931,8 @@ class TradingBot:
         us_pnl = sum(t.get("profit", 0) for t in trades if t.get("action") == "SELL" and t.get("market") == "US")
 
         try:
-            portfolio, total_cash, *_ = self._combined_snapshot()
+            portfolio, total_cash, kr_positions, kr_cash, us_positions, usd_cash, usd_rate = \
+                self._combined_snapshot()
         except Exception as e:
             # KIS 서버 쪽 일시적 오류(예: EGW00300 게이트웨이 라우팅 오류)로 계좌 재조회가
             # 실패해도, 이미 스캔·상태저장은 끝난 뒤라 치명적인 상황이 아니다. 여기서
@@ -941,12 +942,27 @@ class TradingBot:
             # 넘어간다.
             log.warning(f"[일일요약] 계좌 조회 실패 — 요약 스킵, 다음 실행에서 재시도: {type(e).__name__}: {e}")
             return
+
+        # 종목별 매입금액·수익률·평가금액 — 해외는 원화환산해서 국내와 같은 단위로 보여준다
+        # (요약 메시지 전체가 항상 원화 기준이라는 기존 관례와 통일).
+        kr_holdings = [
+            {"name": KR_NAMES.get(code, code), "buy_amount": p["avg_price"] * p["qty"],
+             "profit_rate": p["profit_rate"], "value": p["value"]}
+            for code, p in kr_positions.items()
+        ]
+        us_holdings = [
+            {"name": US_NAMES.get(code, code), "buy_amount": p["avg_price"] * p["qty"] * usd_rate,
+             "profit_rate": p["profit_rate"], "value": p["value"] * usd_rate}
+            for code, p in us_positions.items()
+        ]
+
         notifier.notify_daily(
             str(_now_kst().date()),
             kr_buy, kr_sell, kr_pnl,
             us_buy, us_sell, us_pnl,
             SETTINGS["enable_us_trading"],
             portfolio, total_cash, initial_equity,
+            kr_holdings, us_holdings,
         )
         _mark_daily_summary_sent()
 

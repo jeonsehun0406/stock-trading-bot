@@ -101,8 +101,19 @@ def build_sell_message(ticker, ret_pct, profit_won, reason, portfolio, cash, ini
     return "\n".join(l for l in lines if l)
 
 
+def _holding_lines(holdings):
+    """종목별 '이름  매입 000원(±0.0%), 평가 000원' 한 줄씩"""
+    lines = []
+    for h in holdings:
+        lines.append(
+            f" {h['name']}  매입 {format_won(h['buy_amount'])}({h['profit_rate']:+.1f}%), "
+            f"평가 {format_won(h['value'])}"
+        )
+    return lines
+
+
 def build_daily_summary(date, kr_buy, kr_sell, kr_pnl, us_buy, us_sell, us_pnl,
-                         show_us, portfolio, cash, initial):
+                         show_us, portfolio, cash, initial, kr_holdings=None, us_holdings=None):
     """하루 마감 요약 (국내/해외 구분, 저녁 8시 이후 하루 1번만 호출됨)"""
     total = sum(p["value"] for p in portfolio.values()) + cash
     total_ret = (total / initial - 1) * 100 if initial else 0
@@ -110,9 +121,13 @@ def build_daily_summary(date, kr_buy, kr_sell, kr_pnl, us_buy, us_sell, us_pnl,
              "─────────────",
              "🇰🇷 국내",
              f" 매수 {kr_buy}건 · 매도 {kr_sell}건 · 실현손익 {kr_pnl:+,.0f}원"]
+    if kr_holdings:
+        lines += _holding_lines(kr_holdings)
     if show_us:
         lines += ["🇺🇸 해외 (원화환산)",
                   f" 매수 {us_buy}건 · 매도 {us_sell}건 · 실현손익 {us_pnl:+,.0f}원"]
+        if us_holdings:
+            lines += _holding_lines(us_holdings)
     lines += ["─────────────",
               f" 보유 종목  {len(portfolio)}개",
               f" 현금  {format_won(cash)}",
@@ -234,9 +249,9 @@ def notify_sell(ticker, ret_pct, profit_won, reason, portfolio, cash, initial):
                                      portfolio, cash, initial))
 
 def notify_daily(date, kr_buy, kr_sell, kr_pnl, us_buy, us_sell, us_pnl,
-                  show_us, portfolio, cash, initial):
+                  show_us, portfolio, cash, initial, kr_holdings=None, us_holdings=None):
     return notify(build_daily_summary(date, kr_buy, kr_sell, kr_pnl, us_buy, us_sell, us_pnl,
-                                      show_us, portfolio, cash, initial))
+                                      show_us, portfolio, cash, initial, kr_holdings, us_holdings))
 
 
 # ─────────────────────────────────────────────────────────────────────────
